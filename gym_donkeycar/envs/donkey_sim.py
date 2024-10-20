@@ -174,6 +174,9 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.vel_y = 0.0
         self.vel_z = 0.0
         self.lidar = []
+        self.n_steps_low_speed = 0
+        self.n_steps = 0
+        self.min_speed = 1.0
 
         # car in Unity lefthand coordinate system: roll is Z, pitch is X and yaw is Y
         self.roll = 0.0
@@ -426,6 +429,8 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.current_lap_time = 0.0
         self.last_lap_time = 0.0
         self.lap_count = 0
+        self.n_steps_low_speed = 0
+        self.n_steps = 0
 
         # car
         self.roll = 0.0
@@ -437,6 +442,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
 
     def take_action(self, action: np.ndarray) -> None:
         self.send_control(action[0], action[1])
+        self.n_steps += 1
 
     def observe(self) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         while self.last_received == self.time_received:
@@ -491,7 +497,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
             return -1.0
 
         if self.cte > self.max_cte:
-            return -1.0
+            return -5.0
 
         # Collision
         if self.hit != "none":
@@ -499,7 +505,9 @@ class DonkeyUnitySimHandler(IMesgHandler):
 
         # going fast close to the center of lane yeilds best reward
         if self.forward_vel > 0.0:
-            return (1.0 - (math.fabs(self.cte) / self.max_cte)) * self.forward_vel
+            center_penalty = (math.fabs(self.cte) / self.max_cte) ** 2
+            reward = (1.0 - center_penalty) * self.forward_vel
+            return reward
 
         # in reverse, reward doesn't have centering term as this can result in some exploits
         return self.forward_vel
@@ -619,6 +627,13 @@ class DonkeyUnitySimHandler(IMesgHandler):
             logger.debug("disqualified")
             self.over = True
 
+        if abs(self.speed) < self.min_speed and self.n_steps > 100:
+            self.n_steps_low_speed += 1
+            if self.n_steps_low_speed > 60:
+                self.over = True
+        else:
+            self.n_steps_slow_speed = 0
+            
         # Disable reset
         if os.environ.get("RACE") == "True":
             self.over = False
