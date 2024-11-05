@@ -193,6 +193,9 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.starting_line_index = -1
         self.lap_count = 0
 
+        self.lap_reward = conf.get("lap_reward", 15.0)
+        self.previous_lap_count = 0  # Track previous lap count to detect completions
+
     def on_connect(self, client: SimClient) -> None:  # pytype: disable=signature-mismatch
         logger.debug("socket connected")
         self.client = client
@@ -429,6 +432,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.current_lap_time = 0.0
         self.last_lap_time = 0.0
         self.lap_count = 0
+        self.previous_lap_count = 0
         self.n_steps_low_speed = 0
         self.n_steps = 0
 
@@ -494,23 +498,23 @@ class DonkeyUnitySimHandler(IMesgHandler):
         # max_speed = 10
 
         if done:
-            return -1.0
+            return -4.0
 
-        if self.cte > self.max_cte:
-            return -5.0
+        reward = 0.0
 
-        # Collision
-        if self.hit != "none":
-            return -2.0
+        while self.previous_lap_count < self.lap_count:
+            reward += self.lap_reward
+            self.previous_lap_count += 1
 
         # going fast close to the center of lane yields best reward
         if self.forward_vel > 0.0:
-            center_penalty = (math.fabs(self.cte) / self.max_cte) ** 2
-            reward = (1.0 - center_penalty) * self.forward_vel
-            return reward
+            center_penalty = (math.fabs(self.cte) / self.max_cte)
+            reward += ((1.0 - center_penalty) ** 2) * self.forward_vel
+        else:
+            # in reverse, reward doesn't have centering term as this can result in some exploits
+            reward += self.forward_vel
 
-        # in reverse, reward doesn't have centering term as this can result in some exploits
-        return self.forward_vel
+        return reward
 
     # ------ Socket interface ----------- #
 
@@ -621,15 +625,16 @@ class DonkeyUnitySimHandler(IMesgHandler):
             logger.debug(f"game over: hit {self.hit}")
             self.over = True
         elif self.missed_checkpoint:
-            logger.debug("missed checkpoint")
+            logger.debug("game over: missed checkpoint")
             self.over = True
         elif self.dq:
-            logger.debug("disqualified")
+            logger.debug("game over: disqualified")
             self.over = True
 
         if abs(self.speed) < self.min_speed and self.n_steps > 100:
             self.n_steps_low_speed += 1
             if self.n_steps_low_speed > 60:
+                logger.debug("game over: stopped")
                 self.over = True
         else:
             self.n_steps_slow_speed = 0
