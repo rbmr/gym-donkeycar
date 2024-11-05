@@ -11,7 +11,7 @@ import time
 import types
 from io import BytesIO
 from typing import Any, Callable, Dict, List, Tuple, Union
-
+import math
 import numpy as np
 from PIL import Image
 
@@ -509,7 +509,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
         # going fast close to the center of lane yields best reward
         if self.forward_vel > 0.0:
             center_penalty = (math.fabs(self.cte) / self.max_cte)
-            reward += ((1.0 - center_penalty) ** 2) * self.forward_vel
+            reward += ((1.0 - center_penalty) ** 2) * math.sqrt(self.forward_vel)
         else:
             # in reverse, reward doesn't have centering term as this can result in some exploits
             reward += self.forward_vel
