@@ -176,7 +176,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.lidar = []
         self.n_steps_low_speed = 0
         self.n_steps = 0
-        self.min_speed = 1.0
+        self.min_speed = 0.5
 
         # car in Unity lefthand coordinate system: roll is Z, pitch is X and yaw is Y
         self.roll = 0.0
@@ -503,7 +503,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
         if self.hit != "none":
             return -2.0
 
-        # going fast close to the center of lane yeilds best reward
+        # going fast close to the center of lane yields best reward
         if self.forward_vel > 0.0:
             center_penalty = (math.fabs(self.cte) / self.max_cte) ** 2
             reward = (1.0 - center_penalty) * self.forward_vel
