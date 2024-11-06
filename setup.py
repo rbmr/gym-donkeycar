@@ -16,14 +16,26 @@ with open("HISTORY.rst") as history_file:
     history = history_file.read()
 
 # gym 0.23 introduces breaking changes
-requirements = ["gym==0.22", "numpy", "pillow"]
-
+requirements = [
+    "gym==0.22.0",                    
+    "numpy>=1.26.4,<1.27",            
+    "pillow>=10.4.0,<11.0.0",       
+    "cloudpickle>=3.1.0,<4.0.0",     
+    "scipy>=1.14.1,<1.15.0",  
+    "matplotlib>=3.9.2,<4.0.0",  
+    "opencv-python-headless>=4.10.0.84,<5.0.0",
+    "tensorflow>=2.15.1,<2.16.0", 
+    "torch>=2.5.0,<2.6.0",
+    "stable_baselines3>=2.3.2,<2.4.0",
+    "onnx>=1.17.0,<1.18.0",
+    'shimmy>=0.2.1'
+]
 
 setup(
     name="gym_donkeycar",
     author="Tawn Kramer",
     author_email="tawnkramer@gmail.com",
-    python_requires=">=3.7",
+    python_requires=">=3.11,<3.12",
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",
