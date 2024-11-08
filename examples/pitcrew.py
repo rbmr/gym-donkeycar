@@ -3,7 +3,7 @@ import gym_donkeycar
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
-import os
+import os 
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from concurrent.futures import ThreadPoolExecutor
@@ -98,7 +98,7 @@ def create_env(port: int=9091, name: str = "pitcrew") -> gym.Env:
 
 @dataclass
 class EvalConfig:
-    """Configuration for a training run."""
+    """Configuration for an evaluation run."""
     model_name: str = None
     model_steps: int = 100_000
     evaluate_timesteps: int = 10_000
@@ -155,10 +155,10 @@ def evaluate_model(config: EvalConfig = None):
     env.close()
 
     # compute average reward per thousand timesteps
-    reward_per_ktimesteps = total_reward / evaluate_timesteps * 1000
+    reward_per_ktimesteps = total_reward / config.evaluate_timesteps * 1000
     
-    print(f"Evaluation of {model_name_steps(model_name, model_timesteps)} finished.")
-    print(f"Number of evaluation timesteps: {evaluate_timesteps}")
+    print(f"Evaluation of {model_name_steps(config.model_name, config.model_steps)} finished.")
+    print(f"Number of evaluation timesteps: {config.evaluate_timesteps}")
     print(f"Average reward per 1000 timesteps was: {reward_per_ktimesteps}")
     
     return reward_per_ktimesteps
@@ -242,7 +242,7 @@ if __name__ == "__main__":
         EvalConfig(
             model_name = config.model_name,
             model_steps = config.total_timesteps,
-            port= config.port + 1000,
+            port = config.port,
             evaluate_timesteps = 10_000
         )
         for config in train_configs
