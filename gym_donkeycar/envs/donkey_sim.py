@@ -150,10 +150,14 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.over = False
         self.client = None
 
+        # rate limiting
+        self.min_obs_interval = 1.0 / 20 # Default 10 Hz
+        self.last_obs_time = time.time()
+
         # steering tracking
-        self.steering_penalty = 0.5
-        self.last_steering = 0.0 # track last steering angle
-        self.steering_change = 0.0 # track steering change
+        # self.steering_penalty = 0.5
+        # self.last_steering = 0.0 # track last steering angle
+        # self.steering_change = 0.0 # track steering change
 
         self.fns = {
             "telemetry": self.on_telemetry,
@@ -182,7 +186,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.lidar = []
         self.n_steps_low_speed = 0
         self.n_steps = 0
-        self.min_speed = 0.5
+        self.min_speed = 1
 
         # car in Unity lefthand coordinate system: roll is Z, pitch is X and yaw is Y
         self.roll = 0.0
@@ -409,7 +413,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
         logger.debug("reseting")
         self.send_reset_car()
         self.timer.reset()
-        time.sleep(1)
+        time.sleep(0.5)
         self.image_array = np.zeros(self.camera_img_size)
         self.image_array_b = None
         self.last_obs = self.image_array
@@ -442,9 +446,12 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.n_steps_low_speed = 0
         self.n_steps = 0
 
+        # rate limiting
+        self.last_obs_time = time.time()
+
         # steering tracking
-        self.last_steering = 0.0
-        self.steering_change = 0.0
+        # self.last_steering = 0.0
+        # self.steering_change = 0.0
 
         # car
         self.roll = 0.0
@@ -456,14 +463,20 @@ class DonkeyUnitySimHandler(IMesgHandler):
 
     def take_action(self, action: np.ndarray) -> None: 
         # steering tracking
-        current_steering = action[0]
-        self.steering_change = abs(current_steering - self.last_steering)
-        self.last_steering = current_steering
+        # current_steering = action[0]
+        # self.steering_change = abs(current_steering - self.last_steering)
+        # self.last_steering = current_steering
 
         self.send_control(action[0], action[1])
         self.n_steps += 1
 
     def observe(self) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        # Rate limiting
+        time_since_last_obs = time.time() - self.last_obs_time
+        if time_since_last_obs < self.min_obs_interval:
+            time.sleep(self.min_obs_interval - time_since_last_obs)
+        self.last_obs_time = time.time()
+
         while self.last_received == self.time_received:
             time.sleep(0.001)
 
@@ -529,7 +542,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
             reward += self.forward_vel
 
         # penalize steering changes
-        reward += -self.steering_penalty * self.steering_change ** 2
+        # reward += -self.steering_penalty * self.steering_change ** 2
 
         return reward
 
