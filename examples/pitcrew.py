@@ -30,7 +30,7 @@ class EntropyDecayCallback(BaseCallback):
     """
     Callback for decaying the entropy coefficient over time.
     """
-    def __init__(self, start_ent_coef: float, end_ent_coef: float, total_timesteps: int, verbose: int = 0):
+    def __init__(self, start_ent_coef: float, end_ent_coef: float, total_timesteps: int, verbose: int = 1):
         super().__init__(verbose)
         self.start_ent_coef = start_ent_coef
         self.end_ent_coef = end_ent_coef
@@ -47,7 +47,7 @@ class SaveOnIntervalCallback(BaseCallback):
     """
     Callback for saving models at regular intervals during training
     """
-    def __init__(self, total_timesteps: int, name: str, verbose=0):
+    def __init__(self, total_timesteps: int, name: str, verbose=1):
         super().__init__(verbose)
         self.save_interval = total_timesteps // 10
         self.name = name
@@ -175,7 +175,7 @@ def train_model(config: TrainingConfig = None):
     model = PPO(
         "CnnPolicy",
         env,
-        verbose=0,
+        verbose=1,
         ent_coef=config.ppo.initial_entropy_coef,
         batch_size=config.ppo.batch_size,
         n_steps=config.ppo.n_steps,
