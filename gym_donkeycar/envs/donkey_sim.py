@@ -149,6 +149,12 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.dq = False
         self.over = False
         self.client = None
+
+        # steering tracking
+        self.steering_penalty = 0.5
+        self.last_steering = 0.0 # track last steering angle
+        self.steering_change = 0.0 # track steering change
+
         self.fns = {
             "telemetry": self.on_telemetry,
             "scene_selection_ready": self.on_scene_selection_ready,
@@ -436,6 +442,10 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.n_steps_low_speed = 0
         self.n_steps = 0
 
+        # steering tracking
+        self.last_steering = 0.0
+        self.steering_change = 0.0
+
         # car
         self.roll = 0.0
         self.pitch = 0.0
@@ -444,7 +454,12 @@ class DonkeyUnitySimHandler(IMesgHandler):
     def get_sensor_size(self) -> Tuple[int, int, int]:
         return self.camera_img_size
 
-    def take_action(self, action: np.ndarray) -> None:
+    def take_action(self, action: np.ndarray) -> None: 
+        # steering tracking
+        current_steering = action[0]
+        self.steering_change = abs(current_steering - self.last_steering)
+        self.last_steering = current_steering
+
         self.send_control(action[0], action[1])
         self.n_steps += 1
 
@@ -508,11 +523,13 @@ class DonkeyUnitySimHandler(IMesgHandler):
 
         # going fast close to the center of lane yields best reward
         if self.forward_vel > 0.0:
-            center_penalty = (math.fabs(self.cte) / self.max_cte)
-            reward += ((1.0 - center_penalty) ** 2) * math.sqrt(self.forward_vel)
+            reward += (1.0 - (math.fabs(self.cte) / self.max_cte) ** 2) * math.sqrt(self.forward_vel)
         else:
             # in reverse, reward doesn't have centering term as this can result in some exploits
             reward += self.forward_vel
+
+        # penalize steering changes
+        reward += -self.steering_penalty * self.steering_change ** 2
 
         return reward
 
