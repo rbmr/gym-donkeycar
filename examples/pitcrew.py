@@ -19,7 +19,7 @@ models_dir = os.path.join(pitcrew_dir, "pitcrew_models") # Directory for storing
 
 model_name_steps = lambda name, timesteps: f'model{"_" if name else ""}{name}_{timesteps}'
 model_name_steps_zip = lambda name, timesteps: f"{model_name_steps(name, timesteps)}.zip"
-dir_model_name_steps = lambda name, timesteps: os.path.join(models_dir, model_name_timesteps(name, timesteps))
+dir_model_name_steps = lambda name, timesteps: os.path.join(models_dir, model_name_steps(name, timesteps))
 dir_model_name_steps_zip = lambda name, timesteps: os.path.join(models_dir, model_name_steps_zip(name, timesteps))
 
 # Ensuring the directories exist or creating them
