@@ -15,27 +15,18 @@ with open("README.md") as readme_file:
 with open("HISTORY.rst") as history_file:
     history = history_file.read()
 
-# gym 0.23 introduces breaking changes
+# works for py 3.6 with cuda install
 requirements = [
-    "gym==0.22.0",                    
-    "numpy",            
-    "pillow",       
-    "cloudpickle",     
-    "scipy",  
-    "matplotlib",  
-    "opencv-python-headless",
-    "tensorflow==1.2.0", 
-    "torch",
-    "stable_baselines3",
-    "onnx",
-    'shimmy'
+    "stable_baselines3==1.3.0",
+    "torch==1.10.2",
+    "pillow==8.3.1", 
 ]
 
 setup(
     name="gym_donkeycar",
     author="Some Handsome People",
     author_email="somehandsomepeople@student.uts.edu.au",
-    python_requires=">=3.11,<3.12",
+    python_requires=">=3.6, <3.7", # ">=3.11,<3.12",
     classifiers=[],
     description=description,
     install_requires=requirements,
