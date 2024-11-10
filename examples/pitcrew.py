@@ -1,13 +1,13 @@
 import gym
 import gym_donkeycar
 import numpy as np
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines.ppo2 import PPO2 as PPO
+from stable_baselines.common.callbacks import BaseCallback
 import os 
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines.bench import Monitor
+from stable_baselines.common.vec_env import SubprocVecEnv, DummyVecEnv
 from concurrent.futures import ThreadPoolExecutor
-from stable_baselines3.common.vec_env import VecNormalize, VecTransposeImage
+from stable_baselines.common.vec_env import VecNormalize
 from gym import spaces
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
@@ -30,7 +30,7 @@ class EntropyDecayCallback(BaseCallback):
     """
     Callback for decaying the entropy coefficient over time.
     """
-    def __init__(self, start_ent_coef: float, end_ent_coef: float, total_timesteps: int, verbose: int = 1):
+    def __init__(self, start_ent_coef: float, end_ent_coef: float, total_timesteps: int, verbose: int = 2):
         super().__init__(verbose)
         self.start_ent_coef = start_ent_coef
         self.end_ent_coef = end_ent_coef
@@ -47,14 +47,14 @@ class SaveOnIntervalCallback(BaseCallback):
     """
     Callback for saving models at regular intervals during training
     """
-    def __init__(self, total_timesteps: int, name: str, verbose=1):
+    def __init__(self, save_interval: int, name: str, verbose=2):
         super().__init__(verbose)
-        self.save_interval = total_timesteps // 10
+        self.save_interval = save_interval
         self.name = name
- 
+
     def _on_step(self) -> bool:
         # Save the model every 'save_interval' steps
-        if self.num_timesteps % self.save_interval == 0:
+        if (self.num_timesteps-1) % self.save_interval == 0:
             self.model.save(dir_model_name_steps(self.name, self.num_timesteps))
             if self.verbose > 0:
                 print(f'Saving model to {model_name_steps_zip(self.name, self.num_timesteps)}')
@@ -62,7 +62,7 @@ class SaveOnIntervalCallback(BaseCallback):
 
 def create_env(port: int=9091, name: str = "pitcrew") -> gym.Env:
     """Create and configure the environment."""
-    
+
     cam = (224, 224, 3)
 
     conf = {
@@ -91,9 +91,9 @@ def create_env(port: int=9091, name: str = "pitcrew") -> gym.Env:
         },
     }
 
+    # Just use DummyVecEnv without transposing
     env = gym.make("donkey-waveshare-v0", conf=conf)
     env = DummyVecEnv([lambda: env])
-    env = VecTransposeImage(env)
     return env
 
 @dataclass
@@ -107,7 +107,8 @@ class EvalConfig:
 @dataclass
 class PPOConfig:
     """Hyperparameters specific to PPO algorithm."""
-    batch_size: int = 128
+    # batch_size: int = 128
+    nminibatches: int = 16
     n_steps: int = 2048
     gamma: float = 0.90
     learning_rate: float = 1e-4
@@ -115,11 +116,13 @@ class PPOConfig:
     final_entropy_coef: float = 0.05
     vf_coef: float = 0.1
     max_grad_norm: float = 0.5
-    n_epochs: int = 20
+    # n_epochs: int = 20
+    noptepochs: int = 20
     net_arch: List[int] = field(default_factory=lambda: [512, 512, 256])
-    clip_range: float = 0.3
+    # clip_range: float = 0.3
+    cliprange: float = 0.3
     # normalize_advantage: bool = True
-    target_kl: float = 0.15
+    # target_kl: float = 0.15
 
 @dataclass
 class TrainingConfig:
@@ -170,29 +173,32 @@ def train_model(config: TrainingConfig = None):
 
     # Creating the environment
     env = create_env(config.port, config.model_name)
-    
-    # Initialize the PPO agent with tuned parameters
+
+    # Initialize the PPO agent with tuned parameters (for stable baselines 2)
     model = PPO(
         "CnnPolicy",
         env,
         verbose=1,
         ent_coef=config.ppo.initial_entropy_coef,
-        batch_size=config.ppo.batch_size,
+        # batch_size=config.ppo.batch_size,
+        nminibatches=config.ppo.nminibatches,
         n_steps=config.ppo.n_steps,
         gamma=config.ppo.gamma,
         learning_rate=config.ppo.learning_rate,
         vf_coef=config.ppo.vf_coef,
         max_grad_norm=config.ppo.max_grad_norm,
-        n_epochs=config.ppo.n_epochs,
-        policy_kwargs=dict(net_arch=config.ppo.net_arch),
-        clip_range=config.ppo.clip_range,
+        # n_epochs=config.ppo.n_epochs,
+        noptepochs=config.ppo.noptepochs,
+        policy_kwargs=dict(net_arch=[{'pi': config.ppo.net_arch, 'vf': config.ppo.net_arch}]),
+        # clip_range=config.ppo.clip_range,
+        cliprange=config.ppo.cliprange,
         # normalize_advantage=config.ppo.normalize_advantage,
-        target_kl=config.ppo.target_kl
+        # target_kl=config.ppo.target_kl
     )
 
-    # Instantiating and training the DQN agent with callback for saving
+    # Instantiating and training the agent with callback for saving
     callbacks = [
-        SaveOnIntervalCallback(config.total_timesteps, config.model_name),
+        SaveOnIntervalCallback(save_interval=config.ppo.n_steps, name=config.model_name),
         EntropyDecayCallback(config.ppo.initial_entropy_coef, config.ppo.final_entropy_coef, config.total_timesteps)
     ]
 
@@ -219,22 +225,20 @@ if __name__ == "__main__":
                 final_entropy_coef=0.01,
             )
         ),
-        TrainingConfig(
-            model_name="default",
-            total_timesteps=100_000,
-            port=9092,
-        ),
-        TrainingConfig(
-            model_name="shorty",
-            total_timesteps=50_000,
-            port=9093,
-        ),
+        # TrainingConfig(
+        #     model_name="default",
+        #     total_timesteps=100_000,
+        #     port=9092,
+        # ),
+        # TrainingConfig(
+        #     model_name="shorty",
+        #     total_timesteps=50_000,
+        #     port=9093,
+        # ),
     ]
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        train_futures = [executor.submit(train_model, config) for config in train_configs]
-        for future in train_futures:
-            future.result()
+    for config in train_configs:
+        train_model(config)
         
     print("All training completed. Starting evaluation...")
 
@@ -248,9 +252,7 @@ if __name__ == "__main__":
         for config in train_configs
     ]
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        train_futures = [executor.submit(evaluate_model, config) for config in train_configs]
-        for future in train_futures:
-            future.result()
+    for config in eval_configs:
+        evaluate_model(config)
         
     print("Done!")

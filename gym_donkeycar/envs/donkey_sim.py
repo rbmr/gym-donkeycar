@@ -151,8 +151,8 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.client = None
 
         # rate limiting
-        self.min_obs_interval = 1.0 / 20 # Default 10 Hz
-        self.last_obs_time = time.time()
+        # self.min_obs_interval = 1.0 / 20 # Default 10 Hz
+        # self.last_obs_time = time.time()
 
         # steering tracking
         # self.steering_penalty = 0.5
@@ -447,7 +447,7 @@ class DonkeyUnitySimHandler(IMesgHandler):
         self.n_steps = 0
 
         # rate limiting
-        self.last_obs_time = time.time()
+        # self.last_obs_time = time.time()
 
         # steering tracking
         # self.last_steering = 0.0
@@ -472,10 +472,10 @@ class DonkeyUnitySimHandler(IMesgHandler):
 
     def observe(self) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
         # Rate limiting
-        time_since_last_obs = time.time() - self.last_obs_time
-        if time_since_last_obs < self.min_obs_interval:
-            time.sleep(self.min_obs_interval - time_since_last_obs)
-        self.last_obs_time = time.time()
+        # time_since_last_obs = time.time() - self.last_obs_time
+        # if time_since_last_obs < self.min_obs_interval:
+        #     time.sleep(self.min_obs_interval - time_since_last_obs)
+        # self.last_obs_time = time.time()
 
         while self.last_received == self.time_received:
             time.sleep(0.001)
@@ -503,8 +503,6 @@ class DonkeyUnitySimHandler(IMesgHandler):
         # Add the second image to the dict
         if self.image_array_b is not None:
             info["image_b"] = self.image_array_b
-
-        # self.timer.on_frame()
 
         return observation, reward, done, info
 

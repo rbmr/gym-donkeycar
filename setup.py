@@ -16,11 +16,20 @@ with open("HISTORY.rst") as history_file:
     history = history_file.read()
 
 # works for py 3.6 with cuda install
-requirements = [
-    "stable_baselines3==1.3.0",
-    "torch==1.10.2",
-    "pillow==8.3.1", 
-]
+# requirements = [
+#     "stable_baselines3==1.3.0",
+#     "torch==1.10.2",
+#     "pillow==8.3.1", 
+# ]
+# # In setup.py
+# requirements = [
+#     "gym==0.17.3",
+#     "opencv-python==4.5.5.64",
+#     "tensorflow-gpu==1.15.0",
+#     "stable_baselines==2.10.2",
+#     "torch==1.8.0",
+#     "pillow==8.3.1", 
+# ]
 
 setup(
     name="gym_donkeycar",
@@ -29,7 +38,7 @@ setup(
     python_requires=">=3.6, <3.7", # ">=3.11,<3.12",
     classifiers=[],
     description=description,
-    install_requires=requirements,
+    # install_requires=requirements,
     extras_require={
         "tests": [
             # Run tests and coverage
