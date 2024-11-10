@@ -1,18 +1,21 @@
 import gym
 import gym_donkeycar
 import numpy as np
-from stable_baselines.ppo2 import PPO2 as PPO
-from stable_baselines.common.callbacks import BaseCallback
-import os 
-from stable_baselines.bench import Monitor
-from stable_baselines.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from concurrent.futures import ThreadPoolExecutor
-from stable_baselines.common.vec_env import VecNormalize
+from stable_baselines3.common.vec_env import VecNormalize
 from gym import spaces
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
 import cv2
 from typing import Optional
+import torch
+from torch import nn
+import os
 
 # Creating directories for storing logs and models
 pitcrew_dir = os.path.dirname(__file__)
@@ -115,31 +118,20 @@ class TrainingVisualizer:
         self.enabled = enabled
         if self.enabled:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(self.window_name, 640, 480)
+            cv2.resizeWindow(self.window_name, 800, 400)
     
     def show(self, frame: np.ndarray) -> None:
         """Display the current frame if visualization is enabled."""
         if not self.enabled or frame is None:
             return
-            
-        # For single channel images
-        if len(frame.shape) == 3 and frame.shape[-1] == 1:
-            frame = frame[:, :, 0]
-        
-        # Convert to display format
-        frame_display = (frame * 255).astype(np.uint8)
-        frame_bgr = cv2.cvtColor(frame_display, cv2.COLOR_GRAY2BGR)
-        
-        # Show frame
-        cv2.imshow(self.window_name, frame_bgr)
+        cv2.imshow(self.window_name, frame)
         cv2.waitKey(1)
-
     
     def close(self) -> None:
         """Clean up the visualization window."""
         if self.enabled:
             cv2.destroyWindow(self.window_name)
-            cv2.waitKey(1)  # Give time for window to actually close
+            cv2.waitKey(1) # Give time for window to actually close
 
     def __del__(self):
         """Ensure window is closed on deletion."""
@@ -150,21 +142,40 @@ class VisualizationCallback(BaseCallback):
         super().__init__(verbose)
         self.visualizer = visualizer
         
-    def _on_step(self):
-        # Get the model's actual observation (this will be cropped)
-        if isinstance(self.training_env, DummyVecEnv):
-            env = self.training_env.envs[0]
-        else:
-            env = self.training_env
-    
-        if isinstance(env, PreprocessingEnv):
-            # Get the raw image and apply cropping
-            raw_obs = env.viewer.handler.image_array
-            obs = env.observation(raw_obs)
-        else:
-            obs = env.viewer.handler.image_array
-            
-        self.visualizer.show(obs)
+    def _unwrap_env(self, env):
+        """Get all the relevant environments from the wrapper chain."""
+        env = env.envs[0]  # DummyVecEnv
+        env = env.env      # Monitor
+        preprocess_env = env  # PreprocessingEnv
+        base_env = env.env    # WaveshareEnv
+        return base_env
+        
+    def _on_step(self) -> bool:
+        # Get environments from wrapper chain
+        base_env = self._unwrap_env(self.training_env)
+        
+        # Get raw observation and process it
+        raw_obs = base_env.viewer.handler.image_array
+        processed_obs = preprocess(raw_obs.copy())
+        
+        # Remove single channel dimension and convert to uint8
+        processed_obs = (processed_obs.squeeze() * 255).astype(np.uint8)
+        
+        # Convert grayscale to color
+        processed_color = cv2.cvtColor(processed_obs, cv2.COLOR_GRAY2BGR)
+        
+        # Create white background matching raw observation size
+        processed_display = np.full_like(raw_obs, 239)
+        
+        # Place processed observation at top of white background
+        processed_display[raw_obs.shape[0] - processed_color.shape[0]:, :, :] = processed_color
+        
+        # Convert raw observation from BGR to RGB
+        raw_display = cv2.cvtColor(raw_obs, cv2.COLOR_BGR2RGB)
+        
+        # Show side by side
+        combined = np.hstack([raw_display, processed_display])
+        self.visualizer.show(combined)
         return True
 
 class EntropyDecayCallback(BaseCallback):
@@ -201,6 +212,48 @@ class SaveOnIntervalCallback(BaseCallback):
                 print(f'Saving model to {model_name_steps_zip(self.name, self.num_timesteps)}')
         return True
 
+class BinaryMaskCNN(BaseFeaturesExtractor):
+    """
+    CNN for processing single-channel binary masks.
+    Adapted from stable-baselines3 NatureCNN but modified for single-channel input.
+    """
+    def __init__(self, observation_space: spaces.Box, features_dim: int = 512):
+        super().__init__(observation_space, features_dim)
+        
+        # Validate input space
+        assert len(observation_space.shape) == 3
+        assert observation_space.shape[2] == 1  # Single channel
+        
+        n_input_channels = 1
+        
+        self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4, padding=0),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+
+        # Compute shape by doing one forward pass
+        with torch.no_grad():
+            n_flatten = self.cnn(
+                torch.as_tensor(observation_space.sample()[None]).float()
+                .transpose(1, 3)  # Convert to NCHW format
+                .transpose(2, 3)
+            ).shape[1]
+
+        self.linear = nn.Sequential(
+            nn.Linear(n_flatten, features_dim),
+            nn.ReLU()
+        )
+
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        # Convert from NHWC to NCHW format
+        observations = observations.float().transpose(1, 3).transpose(2, 3)
+        return self.linear(self.cnn(observations))
+
 def create_env(port: int=9091, name: str = "pitcrew") -> gym.Env:
     """Create and configure the environment."""
 
@@ -219,7 +272,7 @@ def create_env(port: int=9091, name: str = "pitcrew") -> gym.Env:
             "img_w": cam[0],
             "img_h": cam[1],
             "img_d": cam[2],
-            "fov" : 100, 
+            "fov" : 120, 
             "fish_eye_x" : 0.5,
             "fish_eye_y" : 0.5,
             "img_enc" : "PNG", # "PNG"
@@ -235,6 +288,8 @@ def create_env(port: int=9091, name: str = "pitcrew") -> gym.Env:
 
     env = gym.make("donkey-waveshare-v0", conf=conf)
     env = PreprocessingEnv(env)
+    env = Monitor(env)
+    env = DummyVecEnv([lambda: env])
     return env
 
 @dataclass
@@ -248,8 +303,8 @@ class EvalConfig:
 @dataclass
 class PPOConfig:
     """Hyperparameters specific to PPO algorithm."""
-    # batch_size: int = 128
-    nminibatches: int = 8
+    batch_size: int = 128
+    # nminibatches: int = 8
     n_steps: int = 2048
     gamma: float = 0.90
     learning_rate: float = 1e-4
@@ -257,13 +312,13 @@ class PPOConfig:
     final_entropy_coef: float = 0.005
     vf_coef: float = 0.1
     max_grad_norm: float = 0.5
-    # n_epochs: int = 20
-    noptepochs: int = 10
+    n_epochs: int = 20
+    # noptepochs: int = 10
     net_arch: List[int] = field(default_factory=lambda: [256, 128, 64])
-    # clip_range: float = 0.3
-    cliprange: float = 0.2
+    clip_range: float = 0.3
+    # cliprange: float = 0.2
     # normalize_advantage: bool = True
-    # target_kl: float = 0.15
+    target_kl: float = 0.15
 
 @dataclass
 class TrainingConfig:
@@ -319,26 +374,33 @@ def train_model(config: TrainingConfig = None):
         # Creating the environment
         env = create_env(config.port, config.model_name)
 
+        # Initialize the PPO agent with custom CNN feature extractor
+        policy_kwargs = {
+            'features_extractor_class': BinaryMaskCNN,
+            'features_extractor_kwargs': {'features_dim': 512},
+            'net_arch': [{'pi': config.ppo.net_arch, 'vf': config.ppo.net_arch}]
+        }
+
         # Initialize the PPO agent with tuned parameters (for stable baselines 2)
         model = PPO(
             "CnnPolicy",
             env,
             verbose=1,
             ent_coef=config.ppo.initial_entropy_coef,
-            # batch_size=config.ppo.batch_size,
-            nminibatches=config.ppo.nminibatches,
+            batch_size=config.ppo.batch_size,
+            # nminibatches=config.ppo.nminibatches,
             n_steps=config.ppo.n_steps,
             gamma=config.ppo.gamma,
             learning_rate=config.ppo.learning_rate,
             vf_coef=config.ppo.vf_coef,
             max_grad_norm=config.ppo.max_grad_norm,
-            # n_epochs=config.ppo.n_epochs,
-            noptepochs=config.ppo.noptepochs,
-            policy_kwargs=dict(net_arch=[{'pi': config.ppo.net_arch, 'vf': config.ppo.net_arch}]),
-            # clip_range=config.ppo.clip_range,
-            cliprange=config.ppo.cliprange,
+            n_epochs=config.ppo.n_epochs,
+            # noptepochs=config.ppo.noptepochs,
+            policy_kwargs=policy_kwargs,
+            clip_range=config.ppo.clip_range,
+            # cliprange=config.ppo.cliprange,
             # normalize_advantage=config.ppo.normalize_advantage,
-            # target_kl=config.ppo.target_kl
+            target_kl=config.ppo.target_kl
         )
 
         # Instantiating and training the agent with callback for saving
